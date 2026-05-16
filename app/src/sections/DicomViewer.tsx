@@ -19,14 +19,15 @@ import {
   Move
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getScanData, type ScanData } from '@/lib/mockApi';
 
 interface DicomViewerProps {
   caseId?: string;
   imageUrls?: string[];
 }
 
-// Mock DICOM images for demo (using placeholder medical images)
-const MOCK_IMAGES = [
+// Fallback mock images
+const FALLBACK_IMAGES = [
   'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&h=800&fit=crop',
   'https://images.unsplash.com/photo-1579154204601-01588f351e67?w=800&h=800&fit=crop',
   'https://images.unsplash.com/photo-1615461066842-32561977e3d8?w=800&h=800&fit=crop',
@@ -43,11 +44,26 @@ export function DicomViewer({ caseId, imageUrls }: DicomViewerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTool, setActiveTool] = useState<'pan' | 'zoom' | 'measure' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [scanData, setScanData] = useState<ScanData | null>(null);
 
-  const images = imageUrls?.length ? imageUrls : MOCK_IMAGES;
+  const images = imageUrls?.length ? imageUrls : scanData?.imageUrls || FALLBACK_IMAGES;
   const currentImage = images[currentImageIndex];
 
-  // Simulate loading
+  // Load scan data on mount
+  useEffect(() => {
+    if (caseId) {
+      getScanData(caseId)
+        .then(data => {
+          setScanData(data);
+          setIsLoading(false);
+        })
+        .catch(() => setIsLoading(false));
+    } else {
+      setIsLoading(false);
+    }
+  }, [caseId]);
+
+  // Simulate per-image loading
   useEffect(() => {
     setIsLoading(true);
     const timer = setTimeout(() => setIsLoading(false), 500);
@@ -261,9 +277,10 @@ export function DicomViewer({ caseId, imageUrls }: DicomViewerProps) {
 
           {/* Overlay Info */}
           <div className="absolute top-4 left-4 bg-black/70 text-white text-xs p-2 rounded space-y-1">
-            <p>Patient: DEMO PATIENT</p>
-            <p>ID: PID-12345</p>
-            <p>Study: {caseId || 'STU-001'}</p>
+            <p>Patient: {scanData?.metadata.patientGender === 'male' ? 'M' : 'F'}/{scanData?.metadata.patientAge || 'N/A'}</p>
+            <p>ID: {caseId || 'N/A'}</p>
+            <p>Modality: {scanData?.metadata.modality || 'Medical Imaging'}</p>
+            <p>Date: {scanData?.metadata.studyDate || new Date().toISOString().split('T')[0]}</p>
             <p>Slice: {currentImageIndex + 1}/{images.length}</p>
           </div>
 

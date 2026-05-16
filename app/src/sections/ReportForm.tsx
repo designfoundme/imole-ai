@@ -18,10 +18,12 @@ import {
   Brain,
   Bone,
   Printer,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 import { SCAN_TYPE_CONFIG, type ScanType } from '@/types';
 import { cn } from '@/lib/utils';
+import { getScanData, generateAIReportWithScanAnalysis } from '@/lib/mockApi';
 
 const SCAN_ICONS: Record<ScanType, React.ElementType> = {
   xray: Bone,
@@ -73,6 +75,7 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [activeTab, setActiveTab] = useState('edit');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null);
 
   if (!caseItem) {
     return (
@@ -99,57 +102,32 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
   const generateAIDraft = async () => {
     setIsGeneratingAI(true);
 
-    // This is the prompt — written with clinical knowledge to get a useful draft
-    // It gives the AI all the context it needs: scan type, body part, patient info, clinical history
-    const prompt = `You are an experienced radiologist assistant. Based on the following case details, generate a preliminary radiology report draft.
-
-Case Details:
-- Scan Type: ${SCAN_TYPE_CONFIG[caseItem.scanType].label}
-- Body Part: ${caseItem.bodyPart}
-- Patient: ${caseItem.patient.age} year old ${caseItem.patient.gender}
-- Clinical History: ${caseItem.clinicalHistory}
-- Urgency: ${caseItem.urgency}
-
-Generate a structured report with three sections. Respond ONLY with a JSON object in this exact format, no extra text:
-{
-  "findings": "detailed radiological findings here",
-  "impression": "concise diagnostic impression here",
-  "recommendations": "clinical recommendations here"
-}
-
-Write in formal radiological language. Be thorough but concise. Note that this is a draft for a qualified radiologist to review and edit — do not make definitive diagnoses, use language like 'appears', 'suggests', 'is noted'.`;
-
     try {
-      // This is the API call — we're sending our prompt to Claude and waiting for a response
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-  'Content-Type': 'application/json',
-  'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-  'anthropic-version': '2023-06-01',
-  'anthropic-dangerous-direct-browser-access': 'true',
-},
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
+      // Fetch real scan data
+      const scanData = await getScanData(caseId);
+      
+      if (!scanData) {
+        throw new Error('Could not load scan data');
+      }
 
-      const data = await response.json();
-      console.log('API response:', JSON.stringify(data));
+      // Generate AI report with scan analysis
+      const aiReport = await generateAIReportWithScanAnalysis(
+        caseId,
+        scanData,
+        caseItem.clinicalHistory,
+        import.meta.env.VITE_ANTHROPIC_API_KEY
+      );
 
-      // data.content[0].text contains the AI's response — we parse it as JSON
-      const text = data.content[0].text;
-      const clean = text.replace(/```json|```/g, '').trim();
-const parsed = JSON.parse(clean);
-
-      // Drop the AI draft into the form fields
-      setFindings(parsed.findings);
-      setImpression(parsed.impression);
-      setRecommendations(parsed.recommendations);
+      // Populate form with AI-generated content
+      setFindings(aiReport.findings);
+      setImpression(aiReport.impression);
+      setRecommendations(aiReport.recommendations);
+      setAiConfidence(aiReport.aiConfidence);
     } catch (err) {
       console.error('AI generation failed:', err);
+      // Fallback to template-based approach
+      applyTemplate('normal');
+      setAiConfidence(null);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -427,6 +405,29 @@ const parsed = JSON.parse(clean);
               </Button>
             </div>
           </div>
+
+          {/* AI Analysis Result */}
+          {aiConfidence !== null && (
+            <Card className="bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-purple-600" />
+                    <span className="text-sm font-medium text-slate-900">AI Analysis Complete</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">Confidence</p>
+                      <p className="text-lg font-bold text-purple-600">{Math.round(aiConfidence * 100)}%</p>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  AI has generated findings based on scan analysis. Review and edit as needed — this is a draft for your review.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Report Form */}
           <div className="space-y-4">
