@@ -1,0 +1,596 @@
+# Imole AI - Detailed User Journeys & Flow Diagrams
+
+## 1. RADIOLOGIST JOURNEY (Current State)
+
+### Current Flow:
+```
+┌─────────┐     ┌──────────┐     ┌─────────────┐     ┌────────────┐     ┌──────────┐     ┌─────────┐
+│  Login  │────▶│Dashboard │────▶│ View Assigned├────▶│ DICOM View ├────▶│  Report  │────▶│ Submit  │
+│         │     │ (Metrics)│     │   Cases     │     │  (Viewer)  │     │  Form    │     │ Report  │
+└─────────┘     └──────────┘     └─────────────┘     └────────────┘     └──────────┘     └─────────┘
+                                         △
+                                         │
+                                  ✅ Working: Case
+                                  list shows assigned
+                                  cases with status
+```
+
+### Flow Issues & Gaps:
+
+```
+┌─ STEP 1: View Assigned Cases ────────────────────────────────────────┐
+│  ✅ Cases display correctly                                          │
+│  ✅ Can filter by status/scan type                                   │
+│  ❌ NO ACCEPT/DECLINE BUTTON - must accept all assignments           │
+│  ❌ NO WORKLOAD INDICATOR - can't see how many more cases waiting     │
+│  ❌ NO PRIORITY SORTING - can't choose which case to read first      │
+│  ❌ NO PERSONAL STATS - can't track own performance                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ STEP 2: View DICOM Images ──────────────────────────────────────────┐
+│  ✅ Images display                                                   │
+│  ✅ Basic zoom/pan/rotate controls                                   │
+│  ❌ NO MEASUREMENT TOOLS - can't measure lesions                     │
+│  ❌ NO ANNOTATION TOOLS - can't mark findings                        │
+│  ❌ CINE LOOP SPEED HARDCODED - can't slow down for careful review   │
+│  ❌ NO WINDOWING PRESETS - must manually adjust for each scan type   │
+│  ❌ NO COMPARISON WITH PRIORS - can't compare to previous studies    │
+│  ❌ NO EXPORT - can't save annotated images                          │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ STEP 3: Write & Submit Report ──────────────────────────────────────┐
+│  ✅ Can write findings/impression/recommendations                    │
+│  ✅ Can generate PDF                                                 │
+│  ❌ AI GENERATION HIDDEN - must click button, not automatic          │
+│  ❌ NO DRAFT AUTO-SAVE - loses work if browser crashes               │
+│  ❌ NO TEMPLATES - wastes time on repetitive text                    │
+│  ❌ NO AI CONFIDENCE SCORE DISPLAY - doesn't know trust level        │
+│  ❌ NO REPORT SIGNING - no audit trail, compliance issue             │
+│  ❌ NO QA REVIEW OPTION - reports go straight to center              │
+│  ❌ NO SPELL CHECK - typos go to clinicians                          │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Improved Radiologist Journey (Proposed):
+
+```
+┌─────────┐     ┌──────────────────────────────────────┐     ┌─────────────┐
+│  Login  │────▶│ My Dashboard (Personal Stats)        │────▶│My Worklist  │
+│  with   │     │ • Cases read today: 5/10              │     │ • 8 Pending │
+│  2FA    │     │ • Avg time per case: 12 min           │     │ • 3 Due <1h │
+└─────────┘     │ • Quality score: 98%                  │     │ • 2 Urgent  │
+                │ • SLA compliance: 100%                │     └─────────────┘
+                │ • Flag: 2 cases due in <30 min        │            │
+                └──────────────────────────────────────┘            │
+                                                                    ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ CASE SELECTION SCREEN (Redesigned)                          │
+                │ ┌──────────────────────────────────────────────────────┐   │
+                │ │ Filter: [Urgent ▼] [All Scan Types ▼] [Sort by Due ▼]   │
+                │ ├──────────────────────────────────────────────────────┤   │
+                │ │ [STAT] Case #TR-240521-042 | Chest CT | Due in 15min     │
+                │ │        Patient: John Doe, 45M | Referred by: Dr. X       │
+                │ │        Uploaded: 2:30pm | Reading started: [None]        │
+                │ │        [ACCEPT & START] [DEFER 30min] [DECLINE]          │
+                │ ├──────────────────────────────────────────────────────┤   │
+                │ │ [URGENT] Case #TR-240521-041 | Chest X-Ray | Due in 45min│
+                │ │        Patient: Jane Smith, 32F | Referred by: Dr. Y     │
+                │ │        Uploaded: 1:45pm | Reading started: [None]        │
+                │ │        [ACCEPT & START] [DEFER 30min] [DECLINE]          │
+                │ └──────────────────────────────────────────────────────┘   │
+                └─────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ User clicks [ACCEPT & START]
+                                    ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ ENHANCED DICOM VIEWER                                       │
+                │ ┌─ Toolbar ──────────────────────────────────────────────┐  │
+                │ │ [Back to Worklist]                                     │  │
+                │ │ [1/24 images] [◀ ▶] [Play 🔊] [⏸] Speed: [1x ▼]      │  │
+                │ │ Tools: [Pan] [Zoom] [Measure] [Annotate] [Compare]   │  │
+                │ │ Window/Level: [Preset: Chest ▼] [Manual: 400/40]     │  │
+                │ └────────────────────────────────────────────────────────┘  │
+                │                                                             │
+                │ [DICOM IMAGE WITH ANNOTATION LAYER]                        │
+                │   • Crosshair measurement showing "2.3cm"                   │
+                │   • Red circle marking "opacity right middle lobe"          │
+                │                                                             │
+                │ ┌─ Info Panel ──────────────────────────────────────────┐  │
+                │ │ Patient: John Doe, 45M                                 │  │
+                │ │ Case: TR-240521-042                                    │  │
+                │ │ Study: Chest CT (3mm slices)                           │  │
+                │ │ Clinical History: SOB x 3 days, fever                  │  │
+                │ └────────────────────────────────────────────────────────┘  │
+                └─────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ User clicks [Write Report]
+                                    ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ SMART REPORT WRITING INTERFACE                             │
+                │                                                             │
+                │ ┌─ AI Assistant Panel (Right Side) ────────────────────┐   │
+                │ │ 🤖 AI DRAFT (LIVE PREVIEW)                          │   │
+                │ │ Based on: Clinical history + Image analysis          │   │
+                │ │ Confidence: 87%  [Info]                              │   │
+                │ │                                                       │   │
+                │ │ FINDINGS (Suggested):                                │   │
+                │ │ "Consolidation in right middle lobe measuring        │   │
+                │ │  2.3 x 1.8 cm. No pleural effusion. Mediastinum     │   │
+                │ │  unremarkable."                                       │   │
+                │ │ [✓ Use] [Edit] [Reject] [Copy]                       │   │
+                │ │                                                       │   │
+                │ │ IMPRESSION (Suggested):                              │   │
+                │ │ "Right middle lobe consolidation, likely             │   │
+                │ │  pneumonia."                                          │   │
+                │ │ [✓ Use] [Edit] [Reject] [Copy]                       │   │
+                │ │                                                       │   │
+                │ │ Quick Templates:                                     │   │
+                │ │ [Normal Lungs] [Pneumonia] [Pulmonary Edema]        │   │
+                │ │ [Pneumothorax] [Effusion] [Custom...] [Save as ...]  │   │
+                │ └───────────────────────────────────────────────────────┘  │
+                │                                                             │
+                │ ┌─ Main Report Editor (Left Side) ────────────────────┐   │
+                │ │ [Autosave: Draft] [Last saved: 2:52pm]              │   │
+                │ │                                                      │   │
+                │ │ FINDINGS:                                            │   │
+                │ │ [Text area - user edits here]                        │   │
+                │ │                                                      │   │
+                │ │ IMPRESSION:                                          │   │
+                │ │ [Text area - user edits here]                        │   │
+                │ │                                                      │   │
+                │ │ RECOMMENDATIONS:                                     │   │
+                │ │ [Text area - user edits here]                        │   │
+                │ │                                                      │   │
+                │ │ [✅ Save as Draft] [⏭ Submit for Review]            │   │
+                │ │                    [→ Mark Complete & Send]          │   │
+                │ └───────────────────────────────────────────────────────┘  │
+                └─────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ User clicks [Mark Complete & Send]
+                                    ▼
+                ┌─────────────────────────────────────────────────────────────┐
+                │ REPORT SUBMISSION & SIGNING                                │
+                │ ┌──────────────────────────────────────────────────────┐   │
+                │ │ BEFORE SUBMITTING - VERIFICATION CHECKLIST           │   │
+                │ │ ☑ Clinical history reviewed                          │   │
+                │ │ ☑ All images reviewed (24/24)                        │   │
+                │ │ ☑ Findings clear and specific                        │   │
+                │ │ ☑ Impression matches findings                        │   │
+                │ │ ☑ Recommendations clinically appropriate             │   │
+                │ │                                                      │   │
+                │ │ [Option: Send for QA Review] [Sign & Submit to Ctr] │   │
+                │ └──────────────────────────────────────────────────────┘   │
+                │                                                             │
+                │ Digital Signature:                                          │
+                │ [Enter PIN/2FA Code to Sign]                               │
+                │ Signature: Dr. Adebayo Johnson                              │
+                │ Time: 2024-05-21 15:45:32 (UTC+1)                          │
+                │                                                             │
+                │ [✅ Submit Report to Diagnostic Center]                    │
+                └─────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                ┌──────────────────────────────────┐
+                │ Confirmation                     │
+                │ ✅ Report Submitted             │
+                │ • Reference: REP-240521-042-001 │
+                │ • Sent to: Diagnostic Center A  │
+                │ • Next case ready in worklist    │
+                │ [← Back to Worklist]             │
+                └──────────────────────────────────┘
+```
+
+---
+
+## 2. DIAGNOSTIC CENTER JOURNEY (Current State)
+
+### Current Flow:
+```
+┌─────────┐     ┌──────────┐     ┌─────────────┐     ┌──────────────┐     ┌────────────┐
+│  Login  │────▶│Dashboard │────▶│Upload Scan  │────▶│ Monitor Cases├────▶│Incomplete! │
+│         │     │ (Metrics)│     │    Form     │     │  (Status)    │     │No delivery │
+└─────────┘     └──────────┘     └─────────────┘     └──────────────┘     └────────────┘
+                                         │
+                                         ▼
+                              [Simulated Upload...]
+                              [After delay: Submitted]
+```
+
+### Flow Issues & Gaps:
+
+```
+┌─ STEP 1: Upload Scan Form ───────────────────────────────────────────┐
+│  ✅ Form layout is clean                                             │
+│  ✅ Scan type selection works                                        │
+│  ❌ NO INPUT VALIDATION - user could enter invalid data              │
+│  ❌ NO DRAG-AND-DROP FEEDBACK - upload progress is simulated         │
+│  ❌ NO MULTI-FILE SUPPORT - must upload one case at a time           │
+│  ❌ CLINICAL HISTORY IS OPTIONAL - should be required                │
+│  ❌ NO PREVIEW BEFORE SUBMIT - can't verify data                     │
+│  ❌ NO SAVE DRAFT OPTION - if page refreshes, data lost              │
+│  ❌ NO ERROR HANDLING - what if upload fails?                        │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ STEP 2: After Upload / Monitor Cases ────────────────────────────────┐
+│  ✅ Cases appear in list after upload                                │
+│  ✅ Status badges show progression                                   │
+│  ❌ NO REAL STATUS UPDATES - status is static                        │
+│  ❌ NO TIME ESTIMATE - when will radiologist read this?              │
+│  ❌ NO NOTIFICATIONS - center doesn't know status changed            │
+│  ❌ NO EMAIL ALERTS - stuck refreshing dashboard                     │
+│  ❌ STATUS TEXT VAGUE - "assigned" vs "assigned to whom?"            │
+│  ❌ NO BATCH ACTIONS - can't resend/cancel multiple cases            │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ STEP 3: Report Delivery (MISSING!) ──────────────────────────────────┐
+│  ❌ NO DOWNLOAD BUTTON - how does center get the report?             │
+│  ❌ NO EMAIL DELIVERY - must contact admin manually                  │
+│  ❌ NO ARCHIVE/HISTORY - can't find past reports                     │
+│  ❌ NO RESEND OPTION - if center lost report, must refile case       │
+│  ❌ NO BATCH EXPORT - can't export weekly reports as CSV             │
+│  ❌ NO INVOICE - no billing/payment tracking                         │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Improved Diagnostic Center Journey (Proposed):
+
+```
+┌─────────┐     ┌──────────────────────────────────┐
+│  Login  │────▶│ Diagnostic Center Dashboard      │
+│  with   │     │ • Quota: 25 uploads/month (20 used) │
+│  2FA    │     │ • Avg turnaround: 2.5h           │
+└─────────┘     │ • Pending reports: 3             │
+                │ • Critical alerts: 1 (STAT case) │
+                │ • Account balance: ₦50,000       │
+                └──────────────────────────────────┘
+                                │
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ Quick Actions                                  │
+                │ [+ New Scan Upload] [View All Cases]          │
+                │ [View Reports] [Download Invoice] [Settings]   │
+                └────────────────────────────────────────────────┘
+                                │
+                                │ Click [+ New Scan Upload]
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ IMPROVED UPLOAD FORM (Step-by-step)            │
+                │                                                 │
+                │ Step 1: Select Scan Type & Body Part           │
+                │ ┌──────────────────────────────────────┐       │
+                │ │ Scan Type: [Chest CT ▼]              │       │
+                │ │ Body Part: [Chest ▼]                 │       │
+                │ │ Urgency: [Routine ▼] [Urgent] [STAT] │       │
+                │ │ Turnaround: ~3 hours                 │       │
+                │ │ Price: ₦15,000                       │       │
+                │ │ [Next: Patient Info]                 │       │
+                │ └──────────────────────────────────────┘       │
+                │                                                 │
+                │ Step 2: Patient Information (REQUIRED)          │
+                │ ┌──────────────────────────────────────┐       │
+                │ │ Full Name: [____________] *          │       │
+                │ │ Age: [__] Gender: [M/F/Other] *      │       │
+                │ │ Patient ID: [____________] *         │       │
+                │ │ Referring Physician: [__________]    │       │
+                │ │ [Next: Clinical Info]                │       │
+                │ └──────────────────────────────────────┘       │
+                │                                                 │
+                │ Step 3: Clinical History (REQUIRED)             │
+                │ ┌──────────────────────────────────────┐       │
+                │ │ Clinical History: *                  │       │
+                │ │ [Large text area - required field]   │       │
+                │ │ Min length: 10 chars                 │       │
+                │ │ Tip: More detail = better diagnosis  │       │
+                │ │ [Next: Upload Files]                 │       │
+                │ └──────────────────────────────────────┘       │
+                │                                                 │
+                │ Step 4: DICOM Files (Drag & Drop)               │
+                │ ┌──────────────────────────────────────┐       │
+                │ │ Drop DICOM files here or click        │       │
+                │ │ [Browse Files]                       │       │
+                │ │                                      │       │
+                │ │ Files to upload:                     │       │
+                │ │ ✓ case1_img001.dcm (45MB) [✕]      │       │
+                │ │ ✓ case1_img002.dcm (42MB) [✕]      │       │
+                │ │ ✓ case1_img003.dcm (41MB) [✕]      │       │
+                │ │ Total: 128MB / 500MB limit           │       │
+                │ │ Upload speed: 15.2 MB/s              │       │
+                │ │                                      │       │
+                │ │ ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 95% Complete      │       │
+                │ │ [← Back] [Cancel] [✅ Review & Submit]       │       │
+                │ └──────────────────────────────────────┘       │
+                │                                                 │
+                │ Step 5: Review Before Submit                   │
+                │ ┌──────────────────────────────────────┐       │
+                │ │ Scan Type: Chest CT                  │       │
+                │ │ Body Part: Chest                     │       │
+                │ │ Patient: John Doe, 45, M             │       │
+                │ │ Urgency: Routine (ETA: 3 hours)     │       │
+                │ │ Files: 3 DICOM files (128MB)         │       │
+                │ │ Clinical History: SOB x3 days, fever │       │
+                │ │ Price: ₦15,000                       │       │
+                │ │ [← Back] [Submit]                    │       │
+                │ └──────────────────────────────────────┘       │
+                └────────────────────────────────────────────────┘
+                                │
+                                ▼
+                ┌──────────────────────────────────────┐
+                │ ✅ Case Submitted                    │
+                │ Case #: TR-240521-042                │
+                │ Upload Time: 2024-05-21 14:30:15    │
+                │ Expected ETA: 2024-05-21 17:30      │
+                │ [← Back to Dashboard]                │
+                └──────────────────────────────────────┘
+                                │
+                                │ Center returns to dashboard
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ ENHANCED CASE LIST/DASHBOARD                   │
+                │                                                 │
+                │ ┌─ URGENT ALERT ──────────────────────────┐   │
+                │ │ ⚠️  Case TR-240521-041 (STAT) overdue!   │   │
+                │ │    Submitted: 11:00am | Due: 12:00pm    │   │
+                │ │    [Contact Support] [View Case]         │   │
+                │ └──────────────────────────────────────────┘   │
+                │                                                 │
+                │ MY RECENT CASES:                                │
+                │ ┌─────────────────────────────────────────┐   │
+                │ │ TR-240521-042 | Chest CT | John Doe     │   │
+                │ │ Status: 🟡 READING (started 2 min ago) │   │
+                │ │ Radiologist: Dr. Adebayo Johnson        │   │
+                │ │ Estimated completion: 17:30 (2h 50m)   │   │
+                │ │ [View Images] [View Progress]           │   │
+                │ ├─────────────────────────────────────────┤   │
+                │ │ TR-240521-041 | Chest X-Ray | Jane S.   │   │
+                │ │ Status: ✅ COMPLETED - Report Ready!    │   │
+                │ │ Radiologist: Dr. Ngozi Okonkwo          │   │
+                │ │ Completed: 14:15 (2h 15m turnaround)   │   │
+                │ │ [📥 Download Report] [View Images]      │   │
+                │ │ [📧 Email Report] [View Annotations]    │   │
+                │ ├─────────────────────────────────────────┤   │
+                │ │ TR-240521-040 | Ultrasound | Mike J.    │   │
+                │ │ Status: 🔵 ASSIGNED (waiting to read)   │   │
+                │ │ Assigned to: Dr. Emeka Okafor           │   │
+                │ │ In queue: 2 of 4 cases for this doctor  │   │
+                │ │ Est. start: 17:00 (27 minutes)          │   │
+                │ │ [View Case] [Change Urgency] [Cancel]   │   │
+                │ └─────────────────────────────────────────┘   │
+                └────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. ADMIN JOURNEY (Current State)
+
+### Current Flow:
+```
+┌─────────┐     ┌──────────┐     ┌──────────────┐     ┌─────────────┐
+│  Login  │────▶│Dashboard │────▶│View All Cases│────▶│Manage Cases │
+│         │     │ (Metrics)│     │              │     │(Incomplete) │
+└─────────┘     └──────────┘     └──────────────┘     └─────────────┘
+                                         │
+                                         ▼
+                                 [Manual assign]
+                                 [No automation]
+                                 [Slow process]
+```
+
+### Flow Issues & Gaps:
+
+```
+┌─ STEP 1: Dashboard ──────────────────────────────────────────────────┐
+│  ✅ Shows basic KPIs                                                 │
+│  ✅ Shows recent cases                                               │
+│  ❌ NO RADIOLOGIST WORKLOAD VIEW - can't see who's busy              │
+│  ❌ NO URGENCY FILTER - pending cases not prioritized                │
+│  ❌ NO PERFORMANCE METRICS - can't identify bottlenecks              │
+│  ❌ NO SYSTEM ALERTS - urgent issues go unnoticed                    │
+│  ❌ NO BULK ACTIONS - must handle cases one-by-one                   │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ STEP 2: Manual Case Assignment ─────────────────────────────────────┐
+│  ✅ Can assign cases                                                 │
+│  ❌ NO SMART ASSIGNMENT - no consideration for workload              │
+│  ❌ NO SPECIALTY MATCHING - can assign to wrong doctor               │
+│  ❌ NO AVAILABILITY CHECK - can't see radiologist status             │
+│  ❌ NO BULK ASSIGN - must assign each case individually              │
+│  ❌ DROPDOWN SHOWS NO WORKLOAD - don't know if doctor is overloaded  │
+│  ❌ NO AUTO-ASSIGN OPTION - admin must do manual work                │
+│  ❌ ADMIN IS BOTTLENECK - platform can't scale                       │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ STEP 3: Management Screens (MISSING!) ──────────────────────────────┐
+│  ❌ CENTERS MANAGEMENT - shows placeholder "Coming in Phase 2"       │
+│  ❌ RADIOLOGISTS MANAGEMENT - shows placeholder "Coming in Phase 2"  │
+│  ❌ SETTINGS - shows placeholder "Coming in Phase 2"                 │
+│  ❌ NO USER ONBOARDING - can't add new centers/radiologists          │
+│  ❌ NO PERMISSION MANAGEMENT - no access control                     │
+│  ❌ NO CONFIGURATION - no settings to customize                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Improved Admin Journey (Proposed):
+
+```
+┌─────────┐     ┌─────────────────────────────────────────────┐
+│  Login  │────▶│ ADMIN DASHBOARD (At-a-Glance Control Panel)│
+│  with   │     │                                             │
+│  2FA    │     │ SYSTEM STATUS:  🟢 All systems operational  │
+└─────────┘     │ 📊 KPIs:  15 cases today | 12 completed |   │
+                │         3 pending | Avg TAT: 2.8h          │
+                │ ⚠️  ALERTS:  1 SLA breach | 2 overdue STAT │
+                │ 👥 STAFF:  3 radiologists active (1 busy)   │
+                │ 🏥 CENTERS:  5 active | 2 high volume       │
+                │                                             │
+                │ [Quick Assign] [View Alerts] [Performance]  │
+                └─────────────────────────────────────────────┘
+                                │
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ RADIOLOGIST WORKLOAD PANEL (Left Sidebar)      │
+                │                                                 │
+                │ Dr. Adebayo Johnson        🟢 Available        │
+                │ • Cases today: 5/10                            │
+                │ • Current: Reading (12 min)                    │
+                │ • Queue: 2 more waiting                        │
+                │ • Specialization: X-Ray, CT, Ultrasound       │
+                │ [View] [Reassign cases]                        │
+                │                                                 │
+                │ Dr. Ngozi Okonkwo          🟠 Busy             │
+                │ • Cases today: 8/8                             │
+                │ • Current: Report writing (8 min)              │
+                │ • Queue: FULL - 5 cases waiting                │
+                │ • Specialization: CT, MRI                      │
+                │ • ⚠️ May exceed SLA targets                    │
+                │ [Reassign pending cases] [Take off duty]       │
+                │                                                 │
+                │ Dr. Emeka Okafor           🔴 Offline/On Break │
+                │ • Cases today: 6/12                            │
+                │ • Back online in: 45 minutes                   │
+                │ • Queue: 3 cases pending                       │
+                │ • Specialization: X-Ray, MRI                   │
+                │ [View] [Assign cases for later]                │
+                └────────────────────────────────────────────────┘
+                                │
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ PENDING CASES QUEUE (Center Panel)             │
+                │                                                 │
+                │ Sort: [By Urgency ▼] [By Time Received ▼]     │
+                │                                                 │
+                │ ┌─ [STAT] TR-240521-041 ──────────────────┐   │
+                │ │ Patient: Jane Smith | Chest X-Ray       │   │
+                │ │ Submitted: 10:00am (4h 30m ago) 🔴 DUE! │   │
+                │ │ Auto-assigned to: Dr. Adebayo (queue: 2) │   │
+                │ │ [Accept] [Change Radiologist] [Note]    │   │
+                │ └─────────────────────────────────────────┘   │
+                │                                                 │
+                │ ┌─ [URGENT] TR-240521-040 ─────────────────┐  │
+                │ │ Patient: Mike Johnson | Ultrasound       │  │
+                │ │ Submitted: 12:15pm (2h 15m ago)         │  │
+                │ │ Auto-assign suggested: Dr. Emeka        │  │
+                │ │ (Specialization match, lower workload)  │  │
+                │ │ [Assign] [Change Radiologist] [Defer]   │  │
+                │ └─────────────────────────────────────────┘  │
+                │                                                 │
+                │ ┌─ [ROUTINE] TR-240521-039 ────────────────┐  │
+                │ │ Patient: Bob Wilson | CT Scan            │  │
+                │ │ Submitted: 2:30pm (0h 30m ago)          │  │
+                │ │ Auto-assign suggested: Dr. Ngozi        │  │
+                │ │ (Specialization match, but workload 8/8) │  │
+                │ │ Alternative: Dr. Adebayo (5/10)          │  │
+                │ │ [Assign to Ngozi] [Assign to Adebayo]   │  │
+                │ │ [Assign to Emeka] [Assign Later] [Note]  │  │
+                │ └─────────────────────────────────────────┘  │
+                │                                                 │
+                │ [Select All] [Assign Selected] [Bulk Actions] │
+                └────────────────────────────────────────────────┘
+                                │
+                                │ Option 1: Smart auto-assign
+                                │ Option 2: Manual assign
+                                ▼
+                ┌──────────────────────────────┐
+                │ ✅ Assignment Complete        │
+                │ 3 cases assigned successfully │
+                │ • TR-240521-041 → Dr. Adebayo│
+                │ • TR-240521-040 → Dr. Emeka  │
+                │ • TR-240521-039 → Dr. Adebayo│
+                │ [← Back to Dashboard]         │
+                └──────────────────────────────┘
+                                │
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ ANALYTICS & PERFORMANCE DASHBOARD              │
+                │                                                 │
+                │ Toggle: [Today] [This Week] [This Month]       │
+                │                                                 │
+                │ RADIOLOGIST PERFORMANCE:                       │
+                │ • Dr. Adebayo: 7 cases | Avg 12min | Quality 98%
+                │ • Dr. Ngozi: 8 cases | Avg 18min | Quality 99%  │
+                │ • Dr. Emeka: 6 cases | Avg 11min | Quality 96%   │
+                │                                                 │
+                │ TURNAROUND TIME TRENDS:                        │
+                │ [Chart showing TAT by day - trending downward] │
+                │                                                 │
+                │ DIAGNOSTIC CENTER PERFORMANCE:                 │
+                │ • Center A: 15 cases | 100% complete | ₦225k  │
+                │ • Center B: 8 cases | 87% complete | ₦120k    │
+                │ • Center C: 5 cases | 80% complete | ₦75k     │
+                │                                                 │
+                │ SLA COMPLIANCE:                                │
+                │ • X-Ray (1h): 95% on-time                     │
+                │ • CT (3h): 88% on-time                        │
+                │ • MRI (6h): 92% on-time                       │
+                │ • Ultrasound (2h): 90% on-time                │
+                │                                                 │
+                │ REVENUE:                                       │
+                │ • Today: ₦205,000                              │
+                │ • This week: ₦1.24M                            │
+                │ • This month: ₦4.8M                            │
+                └────────────────────────────────────────────────┘
+                                │
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ MANAGEMENT SECTIONS (Now Implemented)          │
+                │                                                 │
+                │ [Diagnostic Centers] [Radiologists] [Settings] │
+                │                                                 │
+                │ ▶ DIAGNOSTIC CENTERS:                          │
+                │   [+ Add New Center]                           │
+                │   • Center A | Lagos | 🟢 Active | 250 cases  │
+                │     [Edit] [Suspend] [View Reports] [Delete]   │
+                │   • Center B | Ibadan | 🟢 Active | 180 cases  │
+                │     [Edit] [Suspend] [View Reports] [Delete]   │
+                │                                                 │
+                │ ▶ RADIOLOGISTS:                                │
+                │   [+ Add New Radiologist]                      │
+                │   • Dr. Adebayo | Available | Spec: X, CT, US  │
+                │     [Edit] [Go On Call] [View Stats]           │
+                │   • Dr. Ngozi (Senior) | Available | Spec: CT, MRI
+                │     [Edit] [Go On Call] [View Stats]           │
+                │                                                 │
+                │ ▶ SYSTEM SETTINGS:                             │
+                │   • Turnaround SLAs: [Edit]                   │
+                │   • Pricing: [Edit]                            │
+                │   • Notification settings: [Edit]              │
+                │   • API Keys: [Manage]                         │
+                └────────────────────────────────────────────────┘
+```
+
+---
+
+## Summary Table: Journey Comparison
+
+| Aspect | Radiologist | Diagnostic Center | Admin |
+|--------|-------------|-------------------|-------|
+| **Current Workflow Efficiency** | 40% | 30% | 50% |
+| **Pain Points** | 6 major | 7 major | 5 major |
+| **Bottlenecks** | AI integration, templates | Report delivery, status tracking | Manual assignment |
+| **Missing Features** | Signing, QA review, presets | Batch upload, notifications, delivery | Auto-assign, analytics, CRUD |
+| **User Satisfaction (Estimate)** | ⭐⭐⭐ (3/5) | ⭐⭐ (2/5) | ⭐⭐⭐ (3/5) |
+
+---
+
+## Recommended Phased Improvements
+
+### **Phase 1 (Weeks 1-4): Foundation**
+- Real DICOM viewer for radiologists
+- Radiologist case accept/defer UI
+- Improved upload validation for centers
+- Case status notifications (in-app)
+- Smart case assignment for admin
+
+### **Phase 2 (Weeks 5-8): Workflow**
+- AI report integration & templates
+- Report delivery & archive for centers
+- Radiologist personal dashboards
+- Admin workload visualization
+- Centers & radiologists CRUD
+
+### **Phase 3 (Weeks 9+): Scale**
+- Advanced analytics
+- Billing & invoicing
+- Mobile responsive design
+- Real authentication backend
+- PACS integration
+
