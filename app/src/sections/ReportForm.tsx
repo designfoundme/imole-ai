@@ -1,14 +1,20 @@
-import { useState, useRef } from 'react';
-import { jsPDF } from 'jspdf';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCases } from '@/hooks/useCases';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  FileText, 
-  Send, 
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { toast } from 'sonner';
+import {
+  FileText,
+  Send,
   Download,
   CheckCircle,
   Stethoscope,
@@ -19,11 +25,15 @@ import {
   Bone,
   Printer,
   Sparkles,
-  Zap
+  Zap,
+  Save,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { SCAN_TYPE_CONFIG, type ScanType } from '@/types';
 import { cn } from '@/lib/utils';
 import { getScanData, generateAIReportWithScanAnalysis } from '@/lib/mockApi';
+import { downloadReportPdf } from '@/lib/reportPdf';
 
 const SCAN_ICONS: Record<ScanType, React.ElementType> = {
   xray: Bone,
@@ -34,26 +44,100 @@ const SCAN_ICONS: Record<ScanType, React.ElementType> = {
 
 const REPORT_TEMPLATES = {
   normal: {
+    name: 'Normal',
     findings: 'No acute abnormality is identified. The visualized structures appear unremarkable.',
     impression: 'Normal study.',
     recommendations: 'Clinical correlation recommended. No further imaging indicated at this time.',
   },
   chest_ct: {
+    name: 'Chest CT',
     findings: 'The lungs are clear without focal consolidation, pleural effusion, or pneumothorax. The cardiomediastinal silhouette is within normal limits. No significant lymphadenopathy.',
     impression: 'No acute cardiopulmonary process.',
     recommendations: 'Clinical correlation recommended.',
   },
   brain_mri: {
+    name: 'Brain MRI',
     findings: 'The brain parenchyma demonstrates normal signal intensity. No mass effect, midline shift, or acute infarct. Ventricles and sulci are within normal limits for age.',
     impression: 'Normal brain MRI.',
     recommendations: 'Clinical correlation recommended.',
   },
   clear: {
+    name: 'Clear',
     findings: '',
     impression: '',
     recommendations: '',
   },
-};
+} as const;
+
+const QUICK_INSERTS: { label: string; text: string; target: 'findings' | 'impression' | 'recommendations' }[] = [
+  { label: 'Normal lungs', text: 'Lungs are clear without focal consolidation or pleural effusion.', target: 'findings' },
+  { label: 'No acute finding', text: 'No acute abnormality is identified.', target: 'findings' },
+  { label: 'Normal heart size', text: 'Cardiomediastinal silhouette is within normal limits.', target: 'findings' },
+  { label: 'No bony abnormality', text: 'No fracture, dislocation, or aggressive osseous lesion identified.', target: 'findings' },
+  { label: 'Clinical correlation', text: 'Clinical correlation is recommended.', target: 'recommendations' },
+  { label: 'Follow-up not required', text: 'No further imaging follow-up required at this time.', target: 'recommendations' },
+];
+
+interface CustomTemplate {
+  id: string;
+  name: string;
+  findings: string;
+  impression: string;
+  recommendations: string;
+}
+
+interface DraftPayload {
+  findings: string;
+  impression: string;
+  recommendations: string;
+  aiConfidence: number | null;
+  savedAt: string;
+}
+
+const DRAFT_KEY = (caseId: string) => `report-draft-${caseId}`;
+const TEMPLATES_KEY = (userId: string) => `report-templates-${userId}`;
+
+function readDraft(caseId: string): DraftPayload | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY(caseId));
+    return raw ? JSON.parse(raw) as DraftPayload : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(caseId: string, payload: DraftPayload) {
+  try {
+    localStorage.setItem(DRAFT_KEY(caseId), JSON.stringify(payload));
+  } catch {
+    // ignore quota / privacy errors
+  }
+}
+
+function clearDraft(caseId: string) {
+  try {
+    localStorage.removeItem(DRAFT_KEY(caseId));
+  } catch {
+    // ignore
+  }
+}
+
+function readCustomTemplates(userId: string): CustomTemplate[] {
+  try {
+    const raw = localStorage.getItem(TEMPLATES_KEY(userId));
+    return raw ? JSON.parse(raw) as CustomTemplate[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCustomTemplates(userId: string, templates: CustomTemplate[]) {
+  try {
+    localStorage.setItem(TEMPLATES_KEY(userId), JSON.stringify(templates));
+  } catch {
+    // ignore
+  }
+}
 
 interface ReportFormProps {
   caseId: string;
@@ -67,7 +151,7 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
   const reportRef = useRef<HTMLDivElement>(null);
 
   const caseItem = getCaseById(caseId);
-  
+
   const [findings, setFindings] = useState('');
   const [impression, setImpression] = useState('');
   const [recommendations, setRecommendations] = useState('');
@@ -76,6 +160,48 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
   const [activeTab, setActiveTab] = useState('edit');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiConfidence, setAiConfidence] = useState<number | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+
+  const userId = user?.id || 'anon';
+
+  // Load draft + custom templates on mount
+  useEffect(() => {
+    const draft = readDraft(caseId);
+    if (draft) {
+      setFindings(draft.findings);
+      setImpression(draft.impression);
+      setRecommendations(draft.recommendations);
+      setAiConfidence(draft.aiConfidence);
+      setLastSavedAt(new Date(draft.savedAt));
+      setDraftRestored(true);
+    }
+    setCustomTemplates(readCustomTemplates(userId));
+  }, [caseId, userId]);
+
+  // Auto-save draft every 30s
+  useEffect(() => {
+    if (isSubmitted) return;
+    const hasContent = findings || impression || recommendations;
+    if (!hasContent) return;
+
+    const interval = setInterval(() => {
+      const savedAt = new Date();
+      writeDraft(caseId, {
+        findings,
+        impression,
+        recommendations,
+        aiConfidence,
+        savedAt: savedAt.toISOString(),
+      });
+      setLastSavedAt(savedAt);
+    }, 30_000);
+
+    return () => clearInterval(interval);
+  }, [caseId, findings, impression, recommendations, aiConfidence, isSubmitted]);
 
   if (!caseItem) {
     return (
@@ -92,42 +218,92 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
 
   const ScanIcon = SCAN_ICONS[caseItem.scanType];
 
-  const applyTemplate = (template: keyof typeof REPORT_TEMPLATES) => {
+  const applyBuiltinTemplate = (template: keyof typeof REPORT_TEMPLATES) => {
     const tpl = REPORT_TEMPLATES[template];
     setFindings(tpl.findings);
     setImpression(tpl.impression);
     setRecommendations(tpl.recommendations);
   };
 
+  const applyCustomTemplate = (id: string) => {
+    const tpl = customTemplates.find(t => t.id === id);
+    if (!tpl) return;
+    setFindings(tpl.findings);
+    setImpression(tpl.impression);
+    setRecommendations(tpl.recommendations);
+    toast.success(`Applied "${tpl.name}"`);
+  };
+
+  const insertSnippet = (target: 'findings' | 'impression' | 'recommendations', text: string) => {
+    const append = (prev: string) => (prev ? `${prev.trimEnd()} ${text}` : text);
+    if (target === 'findings') setFindings(append);
+    else if (target === 'impression') setImpression(append);
+    else setRecommendations(append);
+  };
+
+  const saveAsTemplate = () => {
+    const name = newTemplateName.trim();
+    if (!name) {
+      toast.error('Template name is required');
+      return;
+    }
+    const next: CustomTemplate = {
+      id: `tpl-${Date.now()}`,
+      name,
+      findings,
+      impression,
+      recommendations,
+    };
+    const updated = [...customTemplates, next];
+    setCustomTemplates(updated);
+    writeCustomTemplates(userId, updated);
+    setNewTemplateName('');
+    setShowSaveTemplate(false);
+    toast.success(`Saved template "${name}"`);
+  };
+
+  const deleteTemplate = (id: string) => {
+    const updated = customTemplates.filter(t => t.id !== id);
+    setCustomTemplates(updated);
+    writeCustomTemplates(userId, updated);
+    toast.success('Template deleted');
+  };
+
+  const saveDraftNow = () => {
+    const savedAt = new Date();
+    writeDraft(caseId, {
+      findings,
+      impression,
+      recommendations,
+      aiConfidence,
+      savedAt: savedAt.toISOString(),
+    });
+    setLastSavedAt(savedAt);
+    toast.success('Draft saved');
+  };
+
   const generateAIDraft = async () => {
     setIsGeneratingAI(true);
-
     try {
-      // Fetch real scan data
       const scanData = await getScanData(caseId);
-      
-      if (!scanData) {
-        throw new Error('Could not load scan data');
-      }
+      if (!scanData) throw new Error('Could not load scan data');
 
-      // Generate AI report with scan analysis
       const aiReport = await generateAIReportWithScanAnalysis(
         caseId,
         scanData,
         caseItem.clinicalHistory,
-        import.meta.env.VITE_ANTHROPIC_API_KEY
+        import.meta.env.VITE_ANTHROPIC_API_KEY,
       );
 
-      // Populate form with AI-generated content
       setFindings(aiReport.findings);
       setImpression(aiReport.impression);
       setRecommendations(aiReport.recommendations);
       setAiConfidence(aiReport.aiConfidence);
     } catch (err) {
       console.error('AI generation failed:', err);
-      // Fallback to template-based approach
-      applyTemplate('normal');
+      applyBuiltinTemplate('normal');
       setAiConfidence(null);
+      toast.error('AI generation failed — applied normal template instead');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -137,8 +313,6 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
     if (!findings || !impression) return;
 
     setIsSubmitting(true);
-    
-    // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     submitReport(caseId, {
@@ -147,119 +321,37 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
       findings,
       impression,
       recommendations,
+      aiConfidence: aiConfidence ?? undefined,
     });
 
+    clearDraft(caseId);
     setIsSubmitting(false);
     setIsSubmitted(true);
-    
+
     if (onSuccess) {
       setTimeout(onSuccess, 2000);
     }
   };
 
-  const generatePDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 20;
-    let y = margin;
-
-    // Header
-    doc.setFillColor(37, 99, 235);
-    doc.rect(0, 0, pageWidth, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Imole AI', margin, 22);
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('by Health Intelligence Labs', margin, 28);
-    
-    doc.setFontSize(10);
-    doc.text('AI-Powered Diagnostic Imaging Report', margin, 35);
-
-    y = 50;
-
-    // Report Info
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('REPORT', margin, y);
-    
-    y += 10;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    
-    const infoLines = [
-      `Case Number: ${caseItem.caseNumber}`,
-      `Date: ${new Date().toLocaleDateString('en-NG')}`,
-      `Radiologist: ${user?.name || 'Unknown'}`,
-      '',
-      `Patient: ${caseItem.patient.name}`,
-      `Age: ${caseItem.patient.age} years`,
-      `Gender: ${caseItem.patient.gender}`,
-      `Patient ID: ${caseItem.patient.patientId}`,
-      '',
-      `Study: ${SCAN_TYPE_CONFIG[caseItem.scanType].label}`,
-      `Body Part: ${caseItem.bodyPart}`,
-      `Referring Physician: ${caseItem.patient.referringPhysician || 'N/A'}`,
-    ];
-
-    infoLines.forEach(line => {
-      doc.text(line, margin, y);
-      y += 6;
+  const handleDownloadPdf = () => {
+    downloadReportPdf({
+      caseItem,
+      findings,
+      impression,
+      recommendations,
+      radiologistName: user?.name || 'Unknown Radiologist',
+      aiConfidence,
     });
-
-    y += 10;
-
-    // Findings
-    doc.setFont('helvetica', 'bold');
-    doc.text('FINDINGS', margin, y);
-    y += 8;
-    doc.setFont('helvetica', 'normal');
-    
-    const findingsLines = doc.splitTextToSize(findings, pageWidth - 2 * margin);
-    doc.text(findingsLines, margin, y);
-    y += findingsLines.length * 6 + 10;
-
-    // Impression
-    doc.setFont('helvetica', 'bold');
-    doc.text('IMPRESSION', margin, y);
-    y += 8;
-    doc.setFont('helvetica', 'normal');
-    
-    const impressionLines = doc.splitTextToSize(impression, pageWidth - 2 * margin);
-    doc.text(impressionLines, margin, y);
-    y += impressionLines.length * 6 + 10;
-
-    // Recommendations
-    if (recommendations) {
-      doc.setFont('helvetica', 'bold');
-      doc.text('RECOMMENDATIONS', margin, y);
-      y += 8;
-      doc.setFont('helvetica', 'normal');
-      
-      const recLines = doc.splitTextToSize(recommendations, pageWidth - 2 * margin);
-      doc.text(recLines, margin, y);
-    }
-
-    // Footer
-    doc.setFontSize(8);
-    doc.setTextColor(128, 128, 128);
-    doc.text(
-      'Imole AI by Health Intelligence Labs - AI-Assisted Diagnostic Report',
-      margin,
-      doc.internal.pageSize.getHeight() - 15
-    );
-    doc.text(
-      'This report was generated electronically and is valid without signature.',
-      margin,
-      doc.internal.pageSize.getHeight() - 8
-    );
-
-    doc.save(`Report_${caseItem.caseNumber}.pdf`);
   };
+
+  const savedAgo = useMemo(() => {
+    if (!lastSavedAt) return null;
+    const seconds = Math.floor((Date.now() - lastSavedAt.getTime()) / 1000);
+    if (seconds < 30) return 'just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    return lastSavedAt.toLocaleTimeString();
+  }, [lastSavedAt]);
 
   if (isSubmitted) {
     return (
@@ -276,7 +368,7 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Cases
           </Button>
-          <Button onClick={generatePDF}>
+          <Button onClick={handleDownloadPdf}>
             <Download className="w-4 h-4 mr-2" />
             Download PDF
           </Button>
@@ -288,24 +380,38 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="sm" onClick={onBack}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Write Report</h2>
-            <p className="text-sm text-slate-500">{caseItem.caseNumber}</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900">Write Report</h2>
+              {(findings || impression || recommendations) && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                  Draft
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-slate-500">
+              {caseItem.caseNumber}
+              {savedAgo && <> · Saved {savedAgo}</>}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={generatePDF} disabled={!findings || !impression}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={saveDraftNow}>
+            <Save className="w-4 h-4 mr-2" />
+            Save draft
+          </Button>
+          <Button variant="outline" onClick={handleDownloadPdf} disabled={!findings || !impression}>
             <Printer className="w-4 h-4 mr-2" />
             Preview PDF
           </Button>
-          <Button 
-            onClick={handleSubmit} 
+          <Button
+            onClick={handleSubmit}
             disabled={!findings || !impression || isSubmitting}
           >
             {isSubmitting ? (
@@ -323,6 +429,15 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
         </div>
       </div>
 
+      {draftRestored && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-900 flex items-center justify-between">
+          <span>Resumed your previously saved draft.</span>
+          <Button variant="ghost" size="sm" onClick={() => setDraftRestored(false)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+
       {/* Patient Info Card */}
       <Card className="bg-slate-50">
         <CardContent className="p-4">
@@ -332,14 +447,14 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
               caseItem.scanType === 'xray' && 'bg-slate-200',
               caseItem.scanType === 'ct' && 'bg-blue-100',
               caseItem.scanType === 'mri' && 'bg-purple-100',
-              caseItem.scanType === 'ultrasound' && 'bg-green-100'
+              caseItem.scanType === 'ultrasound' && 'bg-green-100',
             )}>
               <ScanIcon className={cn(
                 'w-6 h-6',
                 caseItem.scanType === 'xray' && 'text-slate-600',
                 caseItem.scanType === 'ct' && 'text-blue-600',
                 caseItem.scanType === 'mri' && 'text-purple-600',
-                caseItem.scanType === 'ultrasound' && 'text-green-600'
+                caseItem.scanType === 'ultrasound' && 'text-green-600',
               )} />
             </div>
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -371,19 +486,82 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
         <TabsContent value="edit" className="space-y-6">
           {/* Templates */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-slate-500">Quick templates:</span>
-            <Button variant="outline" size="sm" onClick={() => applyTemplate('normal')}>
+            <span className="text-sm text-slate-500">Templates:</span>
+            <Button variant="outline" size="sm" onClick={() => applyBuiltinTemplate('normal')}>
               Normal
             </Button>
-            <Button variant="outline" size="sm" onClick={() => applyTemplate('chest_ct')}>
+            <Button variant="outline" size="sm" onClick={() => applyBuiltinTemplate('chest_ct')}>
               Chest CT
             </Button>
-            <Button variant="outline" size="sm" onClick={() => applyTemplate('brain_mri')}>
+            <Button variant="outline" size="sm" onClick={() => applyBuiltinTemplate('brain_mri')}>
               Brain MRI
             </Button>
-            <Button variant="outline" size="sm" onClick={() => applyTemplate('clear')}>
+            <Button variant="outline" size="sm" onClick={() => applyBuiltinTemplate('clear')}>
               Clear
             </Button>
+
+            {customTemplates.length > 0 && (
+              <>
+                <span className="text-sm text-slate-400 mx-1">·</span>
+                {customTemplates.map(tpl => (
+                  <span key={tpl.id} className="inline-flex items-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-r-none border-r-0"
+                      onClick={() => applyCustomTemplate(tpl.id)}
+                    >
+                      {tpl.name}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-l-none px-2"
+                      onClick={() => deleteTemplate(tpl.id)}
+                      aria-label={`Delete ${tpl.name}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </span>
+                ))}
+              </>
+            )}
+
+            <Popover open={showSaveTemplate} onOpenChange={setShowSaveTemplate}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!findings && !impression && !recommendations}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Save current
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Save as template</p>
+                    <p className="text-xs text-slate-500">Reuse this report's content later.</p>
+                  </div>
+                  <Input
+                    placeholder="Template name"
+                    value={newTemplateName}
+                    onChange={(e) => setNewTemplateName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveAsTemplate()}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setShowSaveTemplate(false)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={saveAsTemplate}>
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
             <div className="ml-auto">
               <Button
                 size="sm"
@@ -428,6 +606,27 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
               </CardContent>
             </Card>
           )}
+
+          {/* Quick inserts */}
+          <Card className="border-dashed">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-slate-500 uppercase tracking-wide font-medium">Quick insert</span>
+                {QUICK_INSERTS.map((snip, idx) => (
+                  <Button
+                    key={idx}
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => insertSnippet(snip.target, snip.text)}
+                  >
+                    {snip.label}
+                    <span className="ml-1 text-slate-400 text-[10px]">→ {snip.target.slice(0, 4)}</span>
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Report Form */}
           <div className="space-y-4">
@@ -490,7 +689,6 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
         <TabsContent value="preview">
           <Card ref={reportRef} className="max-w-3xl mx-auto">
             <CardContent className="p-8">
-              {/* Report Header */}
               <div className="border-b-2 border-blue-600 pb-4 mb-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -505,7 +703,6 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
                 </div>
               </div>
 
-              {/* Patient Info */}
               <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
                 <div>
                   <p className="text-slate-500">Patient</p>
@@ -521,7 +718,12 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
                 </div>
               </div>
 
-              {/* Report Content */}
+              {typeof aiConfidence === 'number' && (
+                <div className="mb-4 text-xs text-slate-500 italic">
+                  AI-assisted draft confidence: {Math.round(aiConfidence * 100)}%
+                </div>
+              )}
+
               <div className="space-y-6">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-2">Findings</h3>
@@ -547,7 +749,6 @@ export function ReportForm({ caseId, onBack, onSuccess }: ReportFormProps) {
                 )}
               </div>
 
-              {/* Footer */}
               <div className="mt-8 pt-4 border-t border-slate-200">
                 <div className="flex items-center justify-between text-sm">
                   <div>

@@ -1,21 +1,22 @@
+import { useMemo } from 'react';
 import { useCases } from '@/hooks/useCases';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Activity, 
-  Clock, 
-  FileText, 
-  TrendingUp, 
-  CheckCircle, 
+import {
+  Activity,
+  Clock,
+  FileText,
+  TrendingUp,
+  CheckCircle,
   AlertCircle,
   Timer,
   Scan,
   Brain,
-  Bone
+  Bone,
 } from 'lucide-react';
-import { SCAN_TYPE_CONFIG, type ScanType, type CaseStatus } from '@/types';
+import { SCAN_TYPE_CONFIG, type ScanType, type CaseStatus, type ScanCase } from '@/types';
 import { cn } from '@/lib/utils';
 
 const STATUS_COLORS: Record<CaseStatus, string> = {
@@ -45,24 +46,57 @@ interface DashboardProps {
   onViewChange: (view: string) => void;
 }
 
+function startOfToday(): Date {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 export function Dashboard({ onViewChange }: DashboardProps) {
   const { user } = useAuth();
   const { getDashboardMetrics, cases, isLoading } = useCases();
 
   const metrics = getDashboardMetrics();
 
-  // Get recent cases based on user role
-  const recentCases = cases
-    .filter(c => {
-      if (user?.role === 'diagnostic_center') {
-        return c.diagnosticCenterId === user.id;
-      }
-      if (user?.role === 'radiologist') {
-        return c.assignedRadiologistId === user.id;
-      }
+  const visibleCases: ScanCase[] = useMemo(() => {
+    return cases.filter(c => {
+      if (user?.role === 'diagnostic_center') return c.diagnosticCenterId === user.id;
+      if (user?.role === 'radiologist') return c.assignedRadiologistId === user.id;
       return true;
-    })
-    .slice(0, 5);
+    });
+  }, [cases, user]);
+
+  const recentCases = visibleCases.slice(0, 5);
+
+  const personalStats = useMemo(() => {
+    if (user?.role !== 'radiologist') return null;
+    const today = startOfToday();
+    const mine = visibleCases;
+    const completedAll = mine.filter(c => c.status === 'completed' && typeof c.turnaroundHours === 'number');
+    const todays = mine.filter(c => c.createdAt >= today);
+    const completedToday = todays.filter(c => c.status === 'completed');
+    const inProgress = mine.filter(c => c.status === 'in_progress').length;
+    const awaiting = mine.filter(c => c.status === 'assigned' && c.radiologistResponse !== 'accepted').length;
+
+    const avgTurnaround =
+      completedAll.length > 0
+        ? completedAll.reduce((sum, c) => sum + (c.turnaroundHours || 0), 0) / completedAll.length
+        : 0;
+
+    const byScanType: Record<ScanType, number> = { xray: 0, ct: 0, mri: 0, ultrasound: 0 };
+    mine.forEach(c => {
+      byScanType[c.scanType] += 1;
+    });
+
+    return {
+      todayCount: todays.length,
+      completedTodayCount: completedToday.length,
+      inProgress,
+      awaiting,
+      avgTurnaroundHours: Math.round(avgTurnaround * 10) / 10,
+      byScanType,
+      totalAssignedToMe: mine.length,
+    };
+  }, [user, visibleCases]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-NG', {
@@ -80,41 +114,124 @@ export function Dashboard({ onViewChange }: DashboardProps) {
     );
   }
 
+  const showPersonalStats = user?.role === 'radiologist' && personalStats;
+
   return (
     <div className="space-y-6">
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          title="Total Cases"
-          value={metrics.totalCases}
-          icon={FileText}
-          trend={`+${metrics.todayCases} today`}
-          trendUp={true}
-        />
-        <MetricCard
-          title="Pending Cases"
-          value={metrics.pendingCases}
-          icon={AlertCircle}
-          subtitle="Awaiting assignment"
-          variant="warning"
-        />
-        <MetricCard
-          title="In Progress"
-          value={metrics.inProgressCases}
-          icon={Timer}
-          subtitle="Currently reading"
-          variant="info"
-        />
-        <MetricCard
-          title="Completed"
-          value={metrics.completedCases}
-          icon={CheckCircle}
-          subtitle={`Avg ${metrics.averageTurnaroundHours}h turnaround`}
-          variant="success"
-        />
-      </div>
+      {/* Personal radiologist stats */}
+      {showPersonalStats && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <MetricCard
+              title="Today's Cases"
+              value={personalStats.todayCount}
+              icon={Activity}
+              subtitle={`${personalStats.completedTodayCount} completed today`}
+            />
+            <MetricCard
+              title="Awaiting Response"
+              value={personalStats.awaiting}
+              icon={AlertCircle}
+              subtitle="Accept or decline"
+              variant="warning"
+            />
+            <MetricCard
+              title="In Progress"
+              value={personalStats.inProgress}
+              icon={Timer}
+              subtitle="Currently reading"
+              variant="info"
+            />
+            <MetricCard
+              title="Avg Turnaround"
+              value={personalStats.avgTurnaroundHours}
+              icon={CheckCircle}
+              subtitle="Hours per case"
+              variant="success"
+            />
+          </div>
 
-      {/* Revenue & Performance */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Your Volume by Scan Type</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {personalStats.totalAssignedToMe === 0 ? (
+                <p className="text-sm text-slate-500">No cases assigned to you yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {(Object.keys(personalStats.byScanType) as ScanType[]).map(type => {
+                    const Icon = SCAN_ICONS[type];
+                    const count = personalStats.byScanType[type];
+                    const pct =
+                      personalStats.totalAssignedToMe > 0
+                        ? Math.round((count / personalStats.totalAssignedToMe) * 100)
+                        : 0;
+                    return (
+                      <div key={type}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="flex items-center gap-2 text-slate-700">
+                            <Icon className="w-4 h-4 text-slate-400" />
+                            {SCAN_TYPE_CONFIG[type].label}
+                          </span>
+                          <span className="text-slate-500">{count} · {pct}%</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div
+                            className={cn(
+                              'h-2 rounded-full',
+                              type === 'xray' && 'bg-slate-400',
+                              type === 'ct' && 'bg-blue-500',
+                              type === 'mri' && 'bg-purple-500',
+                              type === 'ultrasound' && 'bg-green-500',
+                            )}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* Standard metrics for admin & center */}
+      {!showPersonalStats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <MetricCard
+            title="Total Cases"
+            value={metrics.totalCases}
+            icon={FileText}
+            trend={`+${metrics.todayCases} today`}
+            trendUp={true}
+          />
+          <MetricCard
+            title="Pending Cases"
+            value={metrics.pendingCases}
+            icon={AlertCircle}
+            subtitle="Awaiting assignment"
+            variant="warning"
+          />
+          <MetricCard
+            title="In Progress"
+            value={metrics.inProgressCases}
+            icon={Timer}
+            subtitle="Currently reading"
+            variant="info"
+          />
+          <MetricCard
+            title="Completed"
+            value={metrics.completedCases}
+            icon={CheckCircle}
+            subtitle={`Avg ${metrics.averageTurnaroundHours}h turnaround`}
+            variant="success"
+          />
+        </div>
+      )}
+
       {user?.role === 'admin' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
@@ -131,7 +248,7 @@ export function Dashboard({ onViewChange }: DashboardProps) {
                   +12%
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-1">Based on completed cases this month</p>
+              <p className="text-xs text-slate-500 mt-1">Based on cases this month</p>
             </CardContent>
           </Card>
 
@@ -144,12 +261,10 @@ export function Dashboard({ onViewChange }: DashboardProps) {
                 <span className="text-3xl font-bold text-slate-900">
                   {metrics.averageTurnaroundHours}h
                 </span>
-                <span className="text-sm text-slate-500">
-                  target: 6h
-                </span>
+                <span className="text-sm text-slate-500">target: 6h</span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2 mt-3">
-                <div 
+                <div
                   className="bg-green-500 h-2 rounded-full transition-all"
                   style={{ width: `${Math.min((metrics.averageTurnaroundHours / 6) * 100, 100)}%` }}
                 />
@@ -159,7 +274,6 @@ export function Dashboard({ onViewChange }: DashboardProps) {
         </div>
       )}
 
-      {/* Quick Actions */}
       <div className="flex flex-wrap gap-3">
         {user?.role === 'diagnostic_center' && (
           <Button onClick={() => onViewChange('upload')}>
@@ -179,7 +293,6 @@ export function Dashboard({ onViewChange }: DashboardProps) {
         </Button>
       </div>
 
-      {/* Recent Cases */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -280,7 +393,7 @@ function MetricCard({ title, value, icon: Icon, trend, trendUp, subtitle, varian
             {trend && (
               <p className={cn(
                 'text-xs mt-1 flex items-center',
-                trendUp ? 'text-green-600' : 'text-slate-500'
+                trendUp ? 'text-green-600' : 'text-slate-500',
               )}>
                 <TrendingUp className="w-3 h-3 mr-1" />
                 {trend}
@@ -295,14 +408,14 @@ function MetricCard({ title, value, icon: Icon, trend, trendUp, subtitle, varian
             variant === 'warning' && 'bg-amber-100',
             variant === 'info' && 'bg-blue-100',
             variant === 'success' && 'bg-green-100',
-            variant === 'default' && 'bg-slate-100'
+            variant === 'default' && 'bg-slate-100',
           )}>
             <Icon className={cn(
               'w-5 h-5',
               variant === 'warning' && 'text-amber-600',
               variant === 'info' && 'text-blue-600',
               variant === 'success' && 'text-green-600',
-              variant === 'default' && 'text-slate-600'
+              variant === 'default' && 'text-slate-600',
             )} />
           </div>
         </div>

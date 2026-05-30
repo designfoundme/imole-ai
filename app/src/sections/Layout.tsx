@@ -1,20 +1,26 @@
 import { useAuth } from '@/hooks/useAuth';
+import { useNotifications } from '@/hooks/useNotifications';
 import { Button } from '@/components/ui/button';
-import { 
-  Activity, 
-  LogOut, 
-  LayoutDashboard, 
-  Upload, 
-  FileText, 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Activity,
+  LogOut,
+  LayoutDashboard,
+  Upload,
+  FileText,
   Settings,
   Bell,
   Building2,
   Stethoscope,
-  Shield
+  Shield,
+  AlertTriangle,
+  CheckCircle,
+  Inbox,
+  PlayCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/logo';
-import type { UserRole } from '@/types';
+import type { NotificationType, UserRole } from '@/types';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -56,8 +62,40 @@ const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Administrator',
 };
 
+const NOTIFICATION_ICONS: Record<NotificationType, React.ElementType> = {
+  case_assigned: Inbox,
+  case_accepted: CheckCircle,
+  case_declined: AlertTriangle,
+  reading_started: PlayCircle,
+  report_ready: FileText,
+  urgent_case: AlertTriangle,
+  sla_breach: AlertTriangle,
+};
+
+const NOTIFICATION_COLORS: Record<NotificationType, string> = {
+  case_assigned: 'text-blue-600 bg-blue-50',
+  case_accepted: 'text-green-600 bg-green-50',
+  case_declined: 'text-amber-600 bg-amber-50',
+  reading_started: 'text-purple-600 bg-purple-50',
+  report_ready: 'text-green-600 bg-green-50',
+  urgent_case: 'text-red-600 bg-red-50',
+  sla_breach: 'text-red-600 bg-red-50',
+};
+
+function formatRelative(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { user, logout } = useAuth();
+  const { notifications, unreadCount, markRead, markAllRead, clearAll } = useNotifications();
 
   if (!user) return null;
 
@@ -136,10 +174,82 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               </h2>
             </div>
             <div className="flex items-center gap-4">
-              <button className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                    aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+                  >
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-semibold rounded-full flex items-center justify-center">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-96 p-0">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Notifications</p>
+                      <p className="text-xs text-slate-500">
+                        {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {unreadCount > 0 && (
+                        <Button variant="ghost" size="sm" onClick={markAllRead}>
+                          Mark all read
+                        </Button>
+                      )}
+                      {notifications.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={clearAll}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <Bell className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm text-slate-500">No notifications yet</p>
+                      </div>
+                    ) : (
+                      notifications.map(n => {
+                        const Icon = NOTIFICATION_ICONS[n.type];
+                        return (
+                          <button
+                            key={n.id}
+                            onClick={() => markRead(n.id)}
+                            className={cn(
+                              'w-full flex items-start gap-3 px-4 py-3 border-b border-slate-50 text-left hover:bg-slate-50 transition-colors',
+                              !n.isRead && 'bg-blue-50/40',
+                            )}
+                          >
+                            <div className={cn(
+                              'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
+                              NOTIFICATION_COLORS[n.type],
+                            )}>
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm font-medium text-slate-900">{n.title}</p>
+                                {!n.isRead && (
+                                  <span className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{n.message}</p>
+                              <p className="text-[10px] text-slate-400 mt-1">{formatRelative(n.createdAt)}</p>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </header>

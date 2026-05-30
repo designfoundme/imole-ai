@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { CasesProvider } from '@/hooks/useCases';
+import { NotificationsProvider } from '@/hooks/useNotifications';
 import { Login } from '@/sections/Login';
 import { Layout } from '@/sections/Layout';
 import { Dashboard } from '@/sections/Dashboard';
@@ -210,10 +211,12 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <CasesProvider>
-        <AppContent />
-        <Toaster position="top-right" />
-      </CasesProvider>
+      <NotificationsProvider>
+        <CasesProvider>
+          <AppContent />
+          <Toaster position="top-right" />
+        </CasesProvider>
+      </NotificationsProvider>
     </AuthProvider>
   );
 }

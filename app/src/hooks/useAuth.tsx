@@ -29,7 +29,7 @@ const MOCK_USERS: Record<string, User> = {
     createdAt: new Date(),
   },
   'radio@imole.ai': {
-    id: 'radio-001',
+    id: 'radio-1',
     email: 'radio@imole.ai',
     name: 'Dr. Adebayo Johnson',
     role: 'radiologist',

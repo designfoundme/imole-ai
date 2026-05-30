@@ -49,6 +49,8 @@ export interface Patient {
   referringPhysician?: string;
 }
 
+export type RadiologistResponse = 'pending' | 'accepted' | 'declined' | 'deferred';
+
 export interface ScanCase {
   id: string;
   caseNumber: string;
@@ -62,12 +64,16 @@ export interface ScanCase {
   status: CaseStatus;
   assignedRadiologistId?: string;
   assignedRadiologistName?: string;
+  radiologistResponse?: RadiologistResponse;
+  declineReason?: string;
   dicomFiles: DicomFile[];
   report?: Report;
   createdAt: Date;
   assignedAt?: Date;
+  readingStartedAt?: Date;
   completedAt?: Date;
   turnaroundHours?: number;
+  slaDueAt?: Date;
 }
 
 export interface DicomFile {
@@ -90,6 +96,7 @@ export interface Report {
   impression: string;
   recommendations: string;
   pdfUrl?: string;
+  aiConfidence?: number;
   createdAt: Date;
   signedAt?: Date;
 }
@@ -104,10 +111,19 @@ export interface ReportTemplate {
   templateRecommendations: string;
 }
 
+export type NotificationType =
+  | 'case_assigned'
+  | 'case_accepted'
+  | 'case_declined'
+  | 'reading_started'
+  | 'report_ready'
+  | 'urgent_case'
+  | 'sla_breach';
+
 export interface Notification {
   id: string;
-  userId: string;
-  type: 'case_assigned' | 'case_completed' | 'report_ready' | 'urgent_case';
+  audience: { role: UserRole; userId?: string };
+  type: NotificationType;
   title: string;
   message: string;
   caseId?: string;

@@ -109,10 +109,10 @@ export async function getScanData(caseId: string): Promise<ScanData | null> {
  * Simulates a real AI model analyzing the imaging
  */
 export async function getAIScanAnalysis(
-  caseId: string,
+  _caseId: string,
   scanType: 'xray' | 'ct' | 'mri' | 'ultrasound',
   bodyPart: string,
-  clinicalHistory: string
+  _clinicalHistory: string
 ): Promise<{
   confidence: number;
   findings: string;
